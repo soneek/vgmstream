@@ -45,6 +45,7 @@ static void usage(const char * name) {
             "    -s N: select subsong N, if the format supports multiple subsongs\n"
             "    -m: print metadata only, don't decode\n"
             "    -L: append a smpl chunk and create a looping wav\n"
+            "    -1 N: only output the Nth (first is 0) mono channel\n"
             "    -2 N: only output the Nth (first is 0) set of stereo channels\n"
             "    -p: output to stdout (for piping into another program)\n"
             "    -P: output to stdout even if stdout is a terminal\n"
@@ -75,6 +76,7 @@ typedef struct {
     int print_batchvar;
     int test_reset;
     int write_lwav;
+    int only_mono;
     int only_stereo;
     int stream_index;
     double loop_count;
@@ -93,6 +95,7 @@ static int parse_config(cli_config *cfg, int argc, char ** argv) {
     int opt;
 
     /* non-zero defaults */
+    cfg->only_mono = -1;
     cfg->only_stereo = -1;
     cfg->loop_count = 2.0;
     cfg->fade_time = 10.0;
@@ -101,7 +104,7 @@ static int parse_config(cli_config *cfg, int argc, char ** argv) {
     opterr = 0;
 
     /* read config */
-    while ((opt = getopt(argc, argv, "o:l:f:d:ipPcmxeLEFrgb2:s:t:k:")) != -1) {
+    while ((opt = getopt(argc, argv, "o:l:f:d:ipPcmxeLEFrgb12:s:t:k:")) != -1) {
         switch (opt) {
             case 'o':
                 cfg->outfilename = optarg;
@@ -151,6 +154,9 @@ static int parse_config(cli_config *cfg, int argc, char ** argv) {
                 break;
             case 'r':
                 cfg->test_reset = 1;
+                break;
+            case '1':
+                cfg->only_mono = atoi(optarg);
                 break;
             case '2':
                 cfg->only_stereo = atoi(optarg);
@@ -212,6 +218,10 @@ static int validate_config(cli_config *cfg) {
     }
     if (cfg->play_sdtout && cfg->outfilename) {
         fprintf(stderr,"either -p or -o, make up your mind\n");
+        goto fail;
+    }
+    if (cfg->only_mono >= 0 && cfg->only_stereo >= 0) {
+        fprint(stderr, "-1 and -2 are incompatible\n");
         goto fail;
     }
 
@@ -504,7 +514,15 @@ int main(int argc, char ** argv) {
     /* slap on a .wav header */
     {
         uint8_t wav_buf[0x100];
-        int channels_write = (cfg.only_stereo != -1) ? 2 : channels;
+        int channels_write;
+
+        if (cfg.only_mono != -1)
+            channels_write = 1;
+        else if (cfg.only_stereo != -1)
+            channels_write = 2;
+        else
+            channels_write = channels;
+
         size_t bytes_done;
 
         bytes_done = make_wav_header(wav_buf,0x100,
@@ -524,9 +542,15 @@ int main(int argc, char ** argv) {
         swap_samples_le(buf, channels * to_get); /* write PC endian */
         if (cfg.only_stereo != -1) {
             for (j = 0; j < to_get; j++) {
-                fwrite(buf + j*channels + (cfg.only_stereo*2), sizeof(sample_t), 2, outfile);
+                fwrite(buf + j * channels + (cfg.only_stereo * 2), sizeof(sample_t), 2, outfile);
             }
-        } else {
+        }
+        else if (cfg.only_mono != -1) {
+            for (j = 0; j < to_get; j++) {
+                fwrite(buf + j * channels + (cfg.only_mono * 1), sizeof(sample_t), 2, outfile);
+            }
+        }
+        else {
             fwrite(buf, sizeof(sample_t) * channels, to_get, outfile);
         }
     }
@@ -548,6 +572,10 @@ int main(int argc, char ** argv) {
         if (cfg.only_stereo != -1) {
             for (j = 0; j < to_get; j++) {
                 fwrite(buf + j*channels + (cfg.only_stereo*2), sizeof(sample_t), 2, outfile);
+            }
+        } else if (cfg.only_mono != -1) {
+            for (j = 0; j < to_get; j++) {
+                fwrite(buf + j * channels + (cfg.only_mono * 1), sizeof(sample_t), 2, outfile);
             }
         } else {
             fwrite(buf, sizeof(sample_t) * channels, to_get, outfile);
@@ -580,7 +608,15 @@ int main(int argc, char ** argv) {
         /* slap on a .wav header */
         {
             uint8_t wav_buf[0x100];
-            int channels_write = (cfg.only_stereo != -1) ? 2 : channels;
+            int channels_write;
+
+            if (cfg.only_mono != -1)
+                channels_write = 1;
+            else if (cfg.only_stereo != -1)
+                channels_write = 2;
+            else
+                channels_write = channels;
+
             size_t bytes_done;
 
             bytes_done = make_wav_header(wav_buf,0x100,
@@ -603,9 +639,15 @@ int main(int argc, char ** argv) {
             swap_samples_le(buf, channels * to_get); /* write PC endian */
             if (cfg.only_stereo != -1) {
                 for (j = 0; j < to_get; j++) {
-                    fwrite(buf + j*channels + (cfg.only_stereo*2), sizeof(sample_t), 2, outfile);
+                    fwrite(buf + j * channels + (cfg.only_stereo * 2), sizeof(sample_t), 2, outfile);
                 }
-            } else {
+            }
+            else if (cfg.only_mono != -1) {
+                for (j = 0; j < to_get; j++) {
+                    fwrite(buf + j * channels + (cfg.only_mono * 1), sizeof(sample_t), 2, outfile);
+                }
+            }
+            else {
                 fwrite(buf, sizeof(sample_t) * channels, to_get, outfile);
             }
         }
